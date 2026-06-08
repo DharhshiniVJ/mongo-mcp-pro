@@ -31,15 +31,20 @@ export function recordMetric(
 }
 export function getMetrics(): Record<string, unknown> {
   const summary: Record<string, unknown> = {};
+  const allKeys = new Set<string>([
+    ...operationCounts.keys(),
+    ...blockedCounts.keys(),
+    ...errorCounts.keys(),
+  ]);
 
-  for (const [key, count] of operationCounts) {
+  for (const key of allKeys) {
     const latencies = latencyBuckets.get(key) ?? [];
     const avgLatency = latencies.length > 0
       ? latencies.reduce((a, b) => a + b, 0) / latencies.length
       : 0;
 
     summary[key] = {
-      count,
+      count: operationCounts.get(key) ?? 0,
       avgLatencyMs: Math.round(avgLatency),
       blocked: blockedCounts.get(key) ?? 0,
       errors: errorCounts.get(key) ?? 0,

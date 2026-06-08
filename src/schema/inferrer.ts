@@ -9,12 +9,16 @@ function getType(value: unknown): string {
 function extractFields(
   obj: Record<string, unknown>,
   fieldMap: Map<string, SchemaField>,
+  seenInDoc: Set<string>,
   prefix: string = ""
 ): void {
   for (const key of Object.keys(obj)) {
     const fullKey = prefix ? `${prefix}.${key}` : key;
     const value = obj[key];
     const type = getType(value);
+
+    // Track that we have seen this key in the current document
+    seenInDoc.add(fullKey);
 
     if (!fieldMap.has(fullKey)) {
       fieldMap.set(fullKey, { types: [], nullable: false, frequency: 0 });
@@ -31,7 +35,14 @@ function extractFields(
     }
 
     if (type === "object" && value !== null) {
-      extractFields(value as Record<string, unknown>, fieldMap, fullKey);
+      extractFields(value as Record<string, unknown>, fieldMap, seenInDoc, fullKey);
+    } else if (type === "array" && Array.isArray(value)) {
+      // Recurse into array elements if they are objects
+      for (const item of value) {
+        if (typeof item === "object" && item !== null) {
+          extractFields(item as Record<string, unknown>, fieldMap, seenInDoc, fullKey);
+        }
+      }
     }
   }
 }
@@ -51,16 +62,22 @@ export async function inferSchema(
   const fieldMap = new Map<string, SchemaField>();
 
   for (const doc of documents) {
-    extractFields(doc as Record<string, unknown>, fieldMap);
+    const seenInDoc = new Set<string>();
+    extractFields(doc as Record<string, unknown>, fieldMap, seenInDoc);
+
+    // For each unique field found in this document, increment its occurrence count
+    for (const key of seenInDoc) {
+      const field = fieldMap.get(key)!;
+      field.frequency += 1;
+    }
   }
 
   const totalDocs = documents.length;
   const fields: Record<string, SchemaField> = {};
 
   for (const [key, field] of fieldMap) {
-    field.frequency = totalDocs > 0
-      ? documents.filter(d => key in d).length / totalDocs
-      : 0;
+    // Convert count to fractional frequency
+    field.frequency = totalDocs > 0 ? field.frequency / totalDocs : 0;
     fields[key] = field;
   }
 
