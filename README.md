@@ -1,99 +1,92 @@
-# mongo-mcp-pro
+# Welcome to mongo-mcp-pro! 👋
 
-A production-grade Model Context Protocol (MCP) server that provides **Claude** (or any MCP-compatible LLM client) with safe, secure, and observable access to a MongoDB database.
+Hey there! If you've ever wanted to give Claude (or another AI assistant) safe, observable access to your MongoDB databases without worrying about it running amok, you're in the right place. 
 
----
-
-## 🌟 What is MCP? (A Concept Primer)
-
-Before diving into the codebase, let's understand **Model Context Protocol (MCP)**.
-Traditionally, to connect an AI like Claude to external tools, developers had to write custom, ad-hoc integrations for every platform. MCP is a standard protocol created by Anthropic that acts like a **USB port for AI**. 
-
-By running an MCP server, you register a set of **Tools** that Claude can request to invoke. Claude communicates with this server via standard input/output (stdin/stdout). When Claude decides it needs to read or write data in MongoDB, it sends a JSON request to the server, the server executes the query safely, and it returns the result to Claude.
+`mongo-mcp-pro` is a secure Model Context Protocol (MCP) server written in TypeScript. Think of it as a smart, secure translation gateway that lets an AI query your database while keeping your data safe behind several layers of security checks.
 
 ---
 
-## 🛡️ The 5-Layer Security & Observability Architecture
+## 🌟 What is MCP, anyway?
 
-Connecting an AI directly to a database is highly risky. An AI might write a bad query that deletes all your data, read sensitive information, or get stuck in an infinite loop that crashes your database. 
+If you are new to this ecosystem, **Model Context Protocol (MCP)** is a standard protocol (created by Anthropic) that acts like a **USB port for AI**. 
 
-To solve this, `mongo-mcp-pro` implements a **5-layer pipeline** that wraps every MongoDB tool call. If any layer fails, the operation is blocked, logged, and Claude receives a safe error message.
+Instead of writing a custom integration every time you want an AI to read or write data, MCP defines a standard way for Claude to ask: *"Hey, can you run this tool for me?"* 
+Our server receives these requests over standard input/output (stdin/stdout), runs the database operations safely, and passes the results back to Claude.
+
+---
+
+## 🛡️ The 5-Layer Security Shield
+
+We don't just let the AI write raw database queries and run them. That would be a recipe for disaster (imagine Claude accidentally running an empty update query and modifying every user record!). 
+
+Instead, every single query goes through our **5-Layer Pipeline** before it's allowed near your database:
 
 ```mermaid
 graph TD
-    A[Claude/Client Tool Request] --> B[Layer 1: Rate Limiter]
-    B -->|Passed| C[Layer 2: RBAC Security]
-    C -->|Passed| D[Layer 3: Query Firewall]
-    D -->|Passed| E[Layer 4: Schema Registry]
-    E -->|Passed| F[Layer 5: Query Engine]
-    F --> G[Execution on MongoDB]
-    G --> H[Layer 5: Observability Audit & Metrics]
+    A[Claude requests a tool call] --> B[Layer 1: Rate Limiter]
+    B -->|All good| C[Layer 2: Role Permissions RBAC]
+    C -->|Authorized| D[Layer 3: Query Firewall]
+    D -->|Safe query| E[Layer 4: Live Schema Registry]
+    E -->|Valid fields| F[Layer 5: Database Query Engine]
+    F --> G[Execute on MongoDB]
+    G --> H[Layer 5: Observability Logs & Metrics]
 ```
 
 ### 1. The Rate Limiter (`src/security/rateLimit.ts`)
-* **Why it exists:** Protects MongoDB from denial-of-service (DoS) or runaway loops where Claude might repeatedly call a tool in a short timeframe.
-* **How it works:** Restricts calls per minute based on the user's role:
-  * `reader` → 300 calls/min
-  * `writer` → 100 calls/min
-  * `admin`  → 50 calls/min
+* **Why it's here:** To prevent Claude from getting stuck in an infinite query loop and spamming your database.
+* **How it works:** It tracks calls per minute based on the assigned role: `reader` (300/min), `writer` (100/min), and `admin` (50/min).
 
 ### 2. Role-Based Access Control / RBAC (`src/security/rbac.ts`)
-* **Why it exists:** Ensures users can only run commands they are authorized to perform.
-* **How it works:** We assign roles (`reader`, `writer`, `admin`) to define permissions:
-  * **Reader:** Can only read collections and query schemas (e.g., `find`, `count`, `list_collections`).
-  * **Writer:** Can also modify documents (e.g., `insert_one`, `update_one`, `delete_one`).
-  * **Admin:** Can perform administrative tasks (e.g., create/drop collections and indexes) and execute bulk deletes (`delete_many`).
+* **Why it's here:** Because a reader shouldn't be allowed to delete data.
+* **How it works:** It maps operations to three distinct roles:
+  * **Reader:** Can only search, aggregate, and count data.
+  * **Writer:** Can also insert, update, and delete single documents.
+  * **Admin:** Can do everything, including creating/dropping collections and bulk deleting.
 
-### 3. Query Firewall (`src/security/firewall.ts`)
-* **Why it exists:** Prevents malicious, buggy, or destructive queries from executing.
-* **How it works:** It checks queries against four strict safety rules:
-  1. **No system collection access:** Blocks any operations on collections starting with `system.` (internal MongoDB metadata collections).
-  2. **No empty destructive filters:** Rejects `delete_many` or `update_many` calls if the filter is empty (which would wipe out or modify the entire collection).
-  3. **No `$where` operator:** The `$where` operator allows executing arbitrary JavaScript code inside MongoDB. This represents a massive security risk (NoSQL Injection), so we block it at any nesting level.
-  4. **Max nesting depth of 5:** Prevents stack overflow or performance degradation by blocking queries nested deeper than 5 objects.
+### 3. The Query Firewall (`src/security/firewall.ts`)
+* **Why it's here:** To stop destructive or malicious requests.
+* **How it works:** It enforces four strict rules:
+  1. **No System Collections:** No touching internal databases (like collections starting with `system.`).
+  2. **No Empty Bulk Operations:** You cannot run `delete_many` or `update_many` without a filter. (No accidental database wipes!)
+  3. **No `$where` JavaScript Injection:** The `$where` operator lets users run arbitrary JS code inside MongoDB. We block it entirely.
+  4. **Max Nesting Depth of 5:** Stops overly complex, resource-heavy nested queries.
 
-### 4. Schema Registry (`src/schema/`)
-* **Why it exists:** Validates that the fields Claude is querying actually exist in the database, preventing invalid schema queries that waste database resources.
-* **How it works:**
-  * **Inferrer:** Scans up to 100 documents to recursively build an active schema map of the collection.
-  * **Registry:** Caches the schema for 5 minutes so it doesn't query MongoDB on every validation. The cache is automatically invalidated when documents are inserted or collections are dropped.
-  * **Validator:** Checks the fields in Claude's filter/update statements against the cached schema. If fields do not exist, it blocks the query.
+### 4. The Live Schema Registry (`src/schema/`)
+* **Why it's here:** To make sure Claude is querying fields that actually exist in your database.
+* **How it works:** It samples up to 100 documents to build a map of your fields (even nested ones inside arrays or objects) and caches it for 5 minutes. If Claude tries to filter or search by a field that doesn't exist, we reject it early.
 
-### 5. Query Engine & Observability (`src/tools/index.ts` & `src/observability/`)
-* **Why it exists:** Runs the database commands and records exactly what happened.
-* **How it works:**
-  * Executes the native MongoDB operation.
-  * **Audit Log:** Logs every single request—successful or blocked—to `logs/audit.jsonl` in a structured JSON format.
-  * **Metrics Tracker:** Tracks the count, latency, blocked operations, and errors in-memory per role and operation type.
+### 5. Observability (`src/observability/`)
+* **Why it's here:** So you always have a record of what the AI did.
+* **How it works:** It writes every transaction (successful, blocked, or failed) to `logs/audit.jsonl` in structured JSON lines and tracks latency performance metrics in memory.
 
 ---
 
-## 📂 Project Structure
+## 📂 How the Project is Organized
 
 ```
 src/
 ├── config/
-│   ├── env.ts          - Loads and validates environment variables (.env) using Zod.
-│   ├── db.ts           - Manages the singleton MongoDB database connection.
-│   └── roles.ts        - Contains the permissions registry for each role.
+│   ├── env.ts          - Bootstraps and validates your .env file using Zod.
+│   ├── db.ts           - The connection manager (singleton) for MongoDB.
+│   └── roles.ts        - Registry containing which tools each role is allowed to use.
 ├── security/
-│   ├── rbac.ts         - Checks if a user role is authorized to perform an operation.
-│   ├── firewall.ts     - Validates query structure (depth, safety, system queries).
-│   └── rateLimit.ts    - Enforces rate limits using a token bucket/window mechanism.
+│   ├── rbac.ts         - Checks if the user's role has permission to run the tool.
+│   ├── firewall.ts     - Validates query safety (blocks injection, bulk wipes, etc.).
+│   └── rateLimit.ts    - Protects the database from runaway loops and rate limits users.
 ├── schema/
-│   ├── inferrer.ts     - Dynamically inspects documents to understand database fields.
-│   ├── registry.ts     - Caches inferred schemas for 5 minutes to boost performance.
-│   └── validator.ts    - Checks query fields against the schema cache.
+│   ├── inferrer.ts     - Samples collection documents to dynamically discover fields.
+│   ├── registry.ts     - Caches the inferred schemas for 5 minutes.
+│   └── validator.ts    - Compares Claude's queries against the schema cache.
 ├── tools/
-│   ├── index.ts        - Core "runPipeline" orchestrating all security layers.
-│   ├── read/           - Read tools (find, find_one, count, distinct, aggregate).
-│   ├── write/          - Write tools (insert_one, insert_many, update_one, update_many, delete_one, delete_many).
-│   ├── schema/         - Schema discovery tools (list_collections, infer_schema, collection_stats, list_indexes).
-│   └── admin/          - Admin database operations (create/drop collections and indexes).
+│   ├── index.ts        - The main orchestrator that coordinates the 5 security layers.
+│   ├── read/           - Read tools (find, find_one, aggregate, etc.).
+│   ├── write/          - Write tools (insert, update, delete).
+│   ├── schema/         - Database schema metadata tools.
+│   └── admin/          - Indexing and collection management tools.
 ├── observability/
-│   ├── logger.ts       - Standard structured JSON logger.
-│   ├── audit.ts        - Appends audit entries to logs/audit.jsonl.
-│   └── metrics.ts      - Measures execution latencies and count metrics.
+│   ├── logger.ts       - Standard JSON logger.
+│   ├── audit.ts        - Logs transactions to logs/audit.jsonl.
+│   └── metrics.ts      - Measures tool counts and latencies.
 ├── types/
 │   └── index.ts        - Shared TypeScript types and interfaces.
 └── server.ts           - Entry point that connects DB and registers all 19 tools.
@@ -101,13 +94,13 @@ src/
 
 ---
 
-## ⚙️ Setup & Configuration
+## ⚙️ Getting Started
 
 ### 1. Prerequisites
-- **Node.js** (v20 or higher recommended)
-- **MongoDB** (Running locally or hosted via MongoDB Atlas)
+- Make sure you have **Node.js** (v20 or higher) installed.
+- You'll need a running **MongoDB** database (locally or hosted on MongoDB Atlas).
 
-### 2. Configure Environment Variables
+### 2. Configure Your Environment
 Create a file named `.env` in the root of the project:
 
 ```env
@@ -120,15 +113,13 @@ AUDIT_LOG_PATH=logs/audit.jsonl
 ```
 
 > [!IMPORTANT]
-> - **`MONGO_URI`**: Be sure to replace `mongodb://localhost:27017` with your own MongoDB connection string. If you are using MongoDB Atlas in the cloud, replace it with your Atlas connection string (e.g., `mongodb+srv://<username>:<password>@cluster.mongodb.net/`).
-> - **`DB_NAME`**: Replace `mcpdb` with the name of the database you want Claude to access.
-> - **`ROLE`**: Controls Claude's access level. Change this value to restrict or grant permissions:
->   * `admin` (default in sample): Full database power. Claude can read, write, modify, drop collections, and create indexes.
->   * `writer`: Intermediate power. Claude can read and write data but **cannot** run structural administration commands (like dropping collections or index setup).
->   * `reader`: Read-only power. Claude can only view data and schema info; any write, delete, or structure-modifying commands will be blocked by the security layer.
+> Customize these parameters to match your database:
+> - **`MONGO_URI`**: Put your actual connection string here. If you are using MongoDB Atlas, replace `mongodb://localhost:27017` with your Atlas connection string (e.g., `mongodb+srv://<username>:<password>@cluster.mongodb.net/`).
+> - **`DB_NAME`**: Set this to the specific database you want Claude to access.
+> - **`ROLE`**: Restricts what Claude can do. Set this to `reader` (view only), `writer` (read/write only), or `admin` (full permissions).
 
 ### 3. Install Dependencies
-Run the following command in your terminal to install the project dependencies:
+Open your terminal in the project folder and run:
 ```bash
 npm install
 ```
@@ -137,22 +128,21 @@ npm install
 
 ## 🚀 Running the Server
 
-Because this is a TypeScript project, we have to compile the code (`.ts` files) into JavaScript (`.js` files) that Node.js can execute.
+Since this is a TypeScript project, we compile our code before running it:
 
-### Development Mode (Automatic Compilation)
-Runs the project directly using `ts-node` (compiles on-the-fly for quick testing):
+### Development Mode (On-the-Fly Compilation)
+If you are modifying code and want to test changes quickly:
 ```bash
 npm run dev
 ```
 
-### Production Build (Manual Compilation)
-To run the server in production, compile it first:
-1. **Build the project:**
+### Production Build (Compile to JS)
+To compile and start the server:
+1. **Compile the files:**
    ```bash
    npm run build
    ```
-   This compiles the files inside `src/` into standard JavaScript inside a new `dist/` directory.
-   
+   *This compiles everything inside `src/` to standard JavaScript inside `dist/`.*
 2. **Start the server:**
    ```bash
    npm run start
@@ -162,17 +152,13 @@ To run the server in production, compile it first:
 
 ## 🛠️ Registering with Claude Desktop
 
-To make this server available inside Claude Desktop, you need to configure Claude's configuration file.
+To make these 19 tools available inside your Claude Desktop client:
 
-1. **Open Claude Desktop configuration:**
-   Press `Win + R`, paste the following path, and press Enter:
-   ```cmd
-   %APPDATA%\Claude
-   ```
-   Open `claude_desktop_config.json` in a text editor (e.g. Notepad, VS Code).
+1. **Open the Claude configuration folder:**
+   Press `Win + R`, paste `%APPDATA%\Claude`, and hit Enter. Open `claude_desktop_config.json` in a text editor.
 
-2. **Add the MCP Server configuration:**
-   Add `mongo-mcp-pro` under the `mcpServers` key. Make sure to specify the absolute path to your Node.js executable and your compiled `server.js` script:
+2. **Add `mongo-mcp-pro` to the config file:**
+   Point it to your Node installation and your compiled `server.js` file:
 
    ```json
    {
@@ -188,20 +174,35 @@ To make this server available inside Claude Desktop, you need to configure Claud
    ```
    
    > [!NOTE]
-   > You **do not need to copy your database keys and config variables** into the `claude_desktop_config.json` file. Because our server config loads environment variables relative to where the server script is installed (`../../.env`), it will automatically find and load your `.env` file in the project folder!
+   > You **don't** need to copy your environment variables into this JSON file! Our server configuration dynamically finds and loads the `.env` file directly from your project directory.
 
 3. **Restart Claude Desktop:**
-   Completely quit Claude Desktop (from your system tray/taskbar) and open it again. You should see a hammer icon indicating that the 19 tools are now available for Claude to use.
+   Fully close Claude Desktop (from the Windows system tray) and reopen it. You will see a hammer icon indicating the tools are loaded and ready to go!
 
 ---
 
-## 🔒 Safety Rules & RBAC Permissions Matrix
+## 🔒 Permissions Cheat Sheet
 
-| Operation | Tool Name | Allowed Roles | Requires `confirm: true` |
+Here is a quick look at what each role is allowed to do:
+
+| Operation | Tool Name | Allowed Roles | Requires Confirmation? |
 |---|---|---|---|
 | **Read** | `find`, `find_one`, `count`, `distinct`, `aggregate` | `reader`, `writer`, `admin` | No |
 | **Schema** | `list_collections`, `infer_schema`, `collection_stats`, `list_indexes` | `reader`, `writer`, `admin` | No |
 | **Write** | `insert_one`, `insert_many`, `update_one`, `update_many`, `delete_one` | `writer`, `admin` | No |
-| **Destructive Write** | `delete_many` | `admin` | **Yes** |
+| **Destructive Write** | `delete_many` | `admin` | **Yes (`confirm: true`)** |
 | **Admin Setup** | `create_index`, `create_collection` | `admin` | No |
-| **Admin Tear down** | `drop_index`, `drop_collection` | `admin` | **Yes** |
+| **Admin Tear down** | `drop_index`, `drop_collection` | `admin` | **Yes (`confirm: true`)** |
+
+---
+
+## 🛡️ Production Readiness Checklist (Gaps to Close)
+
+Is this server ready for a massive, multi-tenant cloud production environment? 
+
+**For a local developer environment, yes!** It is secure, fast, and stable. However, if you are planning to deploy this as a cloud API to serve hundreds of different users, here are the **production gaps** you should address next:
+
+* **Redis for State Persistence:** Right now, rate limits, metrics, and schema caches are stored in-memory. Because Claude regularly restarts MCP processes, this data is wiped out frequently. In a cloud setup, this state should be moved to **Redis** so it persists across restarts.
+* **Strict Query Timeouts:** If Claude writes an unindexed query targeting a collection with millions of documents, it could spike your database CPU to 100%. We should add a timeout (like `maxTimeMS(2000)`) on all cursors to auto-terminate queries that run too long.
+* **Dynamic JWT Authentication:** Currently, the server role is hardcoded in the `.env` file at startup. A multi-user production environment should require Claude to pass a security token (like a JSON Web Token) with each request so the server can authenticate the user and resolve their role dynamically.
+* **Cloud Secrets Management:** Database credentials should be moved out of `.env` files and loaded securely from a cloud vault (like AWS Secrets Manager or GCP Secret Manager).
