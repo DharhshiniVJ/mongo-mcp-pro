@@ -119,6 +119,10 @@ LOG_LEVEL=info
 AUDIT_LOG_PATH=logs/audit.jsonl
 ```
 
+> [!IMPORTANT]
+> - **`MONGO_URI`**: Be sure to replace `mongodb://localhost:27017` with your own MongoDB connection string. If you are using MongoDB Atlas in the cloud, replace it with your Atlas connection string (e.g., `mongodb+srv://<username>:<password>@cluster.mongodb.net/`).
+> - **`DB_NAME`**: Replace `mcpdb` with the name of the database you want Claude to access.
+
 ### 3. Install Dependencies
 Run the following command in your terminal to install the project dependencies:
 ```bash
@@ -164,29 +168,23 @@ To make this server available inside Claude Desktop, you need to configure Claud
    Open `claude_desktop_config.json` in a text editor (e.g. Notepad, VS Code).
 
 2. **Add the MCP Server configuration:**
-   Add `mongo-mcp-pro` under the `mcpServers` key. Make sure to replace `C:/Users/Dharhshini/mongo-mcp-pro` with the exact absolute path to your project.
+   Add `mongo-mcp-pro` under the `mcpServers` key. Make sure to specify the absolute path to your Node.js executable and your compiled `server.js` script:
 
    ```json
    {
      "mcpServers": {
        "mongo-mcp-pro": {
-         "command": "node",
+         "command": "C:\\Program Files\\nodejs\\node.exe",
          "args": [
-           "C:/Users/Dharhshini/mongo-mcp-pro/dist/server.js"
-         ],
-         "env": {
-           "MONGO_URI": "mongodb://localhost:27017",
-           "DB_NAME": "mcpdb",
-           "ROLE": "admin",
-           "SESSION_ID": "dev-session",
-           "LOG_LEVEL": "info",
-           "AUDIT_LOG_PATH": "C:/Users/Dharhshini/mongo-mcp-pro/logs/audit.jsonl"
-         }
+           "C:\\Users\\Dharhshini\\mongo-mcp-pro\\dist\\server.js"
+         ]
        }
      }
    }
    ```
-   *Note: Use forward slashes `/` in path configurations on Windows to avoid JSON escape errors.*
+   
+   > [!NOTE]
+   > You **do not need to copy your database keys and config variables** into the `claude_desktop_config.json` file. Because our server config loads environment variables relative to where the server script is installed (`../../.env`), it will automatically find and load your `.env` file in the project folder!
 
 3. **Restart Claude Desktop:**
    Completely quit Claude Desktop (from your system tray/taskbar) and open it again. You should see a hammer icon indicating that the 19 tools are now available for Claude to use.
