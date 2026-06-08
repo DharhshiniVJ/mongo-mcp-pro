@@ -1,0 +1,53 @@
+import { z } from "zod";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { getDb } from "../../config/db.js";
+import { appConfig } from "../../config/env.js";
+import { runPipeline } from "../index.js";
+
+export function registerFind(server: McpServer): void {
+  server.tool(
+    "find",
+    "Find documents in a collection with an optional filter",
+    {
+      collection: z.string().min(1),
+      filter: z.record(z.string(), z.unknown()).optional(),      limit: z.number().int().min(1).max(100).optional(),
+      skip: z.number().int().min(0).optional(),
+    },
+    async (args) => {
+      const result = await runPipeline(
+        {
+          operation: "find",
+          database: appConfig.dbName,
+          collection: args.collection,
+          role: appConfig.role,
+          sessionId: appConfig.sessionId,
+          filter: args.filter as Record<string, unknown> | undefined,
+          options: {
+            limit: args.limit ?? 20,
+            skip: args.skip ?? 0,
+          },
+        },
+        async () => {
+          const db = await getDb();
+          const col = db.collection(args.collection);
+          const documents = await col
+            .find(args.filter ?? {})
+            .limit(args.limit ?? 20)
+            .skip(args.skip ?? 0)
+            .toArray();
+
+          return {
+            success: true,
+            data: documents,
+            count: documents.length,
+            message: `Found ${documents.length} document(s)`,
+          };
+        }
+      );
+
+      return {
+        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+      };
+    }
+  );
+}
