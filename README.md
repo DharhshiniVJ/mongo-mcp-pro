@@ -122,6 +122,10 @@ AUDIT_LOG_PATH=logs/audit.jsonl
 > [!IMPORTANT]
 > - **`MONGO_URI`**: Be sure to replace `mongodb://localhost:27017` with your own MongoDB connection string. If you are using MongoDB Atlas in the cloud, replace it with your Atlas connection string (e.g., `mongodb+srv://<username>:<password>@cluster.mongodb.net/`).
 > - **`DB_NAME`**: Replace `mcpdb` with the name of the database you want Claude to access.
+> - **`ROLE`**: Controls Claude's access level. Change this value to restrict or grant permissions:
+>   * `admin` (default in sample): Full database power. Claude can read, write, modify, drop collections, and create indexes.
+>   * `writer`: Intermediate power. Claude can read and write data but **cannot** run structural administration commands (like dropping collections or index setup).
+>   * `reader`: Read-only power. Claude can only view data and schema info; any write, delete, or structure-modifying commands will be blocked by the security layer.
 
 ### 3. Install Dependencies
 Run the following command in your terminal to install the project dependencies:
