@@ -14,28 +14,25 @@ import { registerInsertOne } from "./tools/write/insert_one.js";
 import { registerInsertMany } from "./tools/write/insert_many.js";
 import { registerUpdateOne } from "./tools/write/update_one.js";
 import { registerUpdateMany } from "./tools/write/update_many.js";
-import { registerDeleteOne } from "./tools/write/delete_one.js";
-import { registerDeleteMany } from "./tools/write/delete_many.js";
 
 import { registerListCollections } from "./tools/schema/list_collections.js";
-import { registerInferSchema } from "./tools/schema/infer_schema.js";
 import { registerCollectionStats } from "./tools/schema/collection_stats.js";
 import { registerListIndexes } from "./tools/schema/list_indexes.js";
+import { registerListEnvironments } from "./tools/schema/list_environments.js";
 
 import { registerCreateIndex } from "./tools/admin/create_index.js";
-import { registerDropIndex } from "./tools/admin/drop_index.js";
 import { registerCreateCollection } from "./tools/admin/create_collection.js";
-import { registerDropCollection } from "./tools/admin/drop_collection.js";
+import { registerQuery } from "./tools/query.js";
 
 async function main(): Promise<void> {
   logger.info("Starting mongo-mcp-pro", {
-    role: appConfig.role,
-    database: appConfig.dbName,
+    defaultEnvironment: appConfig.default,
+    environments: Object.keys(appConfig.environments),
     sessionId: appConfig.sessionId,
   });
 
-  await getDb();
-  logger.info("Connected to MongoDB");
+  // DB connections are established lazily per-environment when tools are invoked.
+  logger.info("Ready to accept requests");
 
   const server = new McpServer({
     name: "mongo-mcp-pro",
@@ -52,23 +49,20 @@ async function main(): Promise<void> {
   registerInsertMany(server);
   registerUpdateOne(server);
   registerUpdateMany(server);
-  registerDeleteOne(server);
-  registerDeleteMany(server);
 
   registerListCollections(server);
-  registerInferSchema(server);
   registerCollectionStats(server);
   registerListIndexes(server);
+  registerListEnvironments(server);
 
   registerCreateIndex(server);
-  registerDropIndex(server);
   registerCreateCollection(server);
-  registerDropCollection(server);
+  registerQuery(server);
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
 
-  logger.info("mongo-mcp-pro running", { tools: 19 });
+  logger.info("mongo-mcp-pro running", { tools: 16 });
 }
 main().catch(async (err) => {
   logger.error("Fatal error", err);

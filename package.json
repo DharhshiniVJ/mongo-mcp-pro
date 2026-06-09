@@ -7,7 +7,9 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "tsc",
     "start": "node dist/server.js",
-    "dev": "ts-node --esm src/server.ts"
+    "dev": "ts-node --esm src/server.ts",
+    "seed": "node dist/scripts/seed.js",
+    "verify-env": "node dist/scripts/verify-env.js"
   },
   "keywords": [],
   "author": "",
@@ -17,6 +19,7 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "dotenv": "^17.4.2",
     "mongodb": "^7.2.0",
+    "yaml": "^2.9.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -24,6 +27,4 @@
     "ts-node": "^10.9.2",
     "typescript": "^6.0.3"
   }
-  
 }
-

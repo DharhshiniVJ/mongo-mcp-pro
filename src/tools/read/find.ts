@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { getDb } from "../../config/db.js";
+import { getDbForEnv } from "../../config/db.js";
 import { appConfig } from "../../config/env.js";
 import { runPipeline } from "../index.js";
 
@@ -10,17 +10,28 @@ export function registerFind(server: McpServer): void {
     "Find documents in a collection with an optional filter",
     {
       collection: z.string().min(1),
-      filter: z.record(z.string(), z.unknown()).optional(),      limit: z.number().int().min(1).max(100).optional(),
+      filter: z.record(z.string(), z.unknown()).optional(),
+      limit: z.number().int().min(1).max(100).optional(),
       skip: z.number().int().min(0).optional(),
+      environment: z.string().optional(),
     },
     async (args) => {
+      const envName = args.environment ?? appConfig.default;
+      const envConfig = appConfig.environments[envName];
+      if (!envConfig) {
+        return {
+          content: [{ type: "text", text: JSON.stringify({ success: false, error: `Environment '${envName}' is not defined` }, null, 2) }],
+        };
+      }
+
       const result = await runPipeline(
         {
           operation: "find",
-          database: appConfig.dbName,
+          database: envConfig.dbName,
           collection: args.collection,
-          role: appConfig.role,
+          dbMode: envConfig.dbMode,
           sessionId: appConfig.sessionId,
+          environment: envName,
           filter: args.filter as Record<string, unknown> | undefined,
           options: {
             limit: args.limit ?? 20,
@@ -28,7 +39,7 @@ export function registerFind(server: McpServer): void {
           },
         },
         async () => {
-          const db = await getDb();
+          const db = await getDbForEnv(envName);
           const col = db.collection(args.collection);
           const documents = await col
             .find(args.filter ?? {})

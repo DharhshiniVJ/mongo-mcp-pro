@@ -1,7 +1,5 @@
-import { checkRateLimit } from "../security/rateLimit.js";
 import { checkPermission } from "../security/rbac.js";
 import { checkFirewall } from "../security/firewall.js";
-import { validateQueryFields } from "../schema/validator.js";
 import { writeAuditEntry } from "../observability/audit.js";
 import { recordMetric } from "../observability/metrics.js";
 import { logger } from "../observability/logger.js";
@@ -14,33 +12,12 @@ export async function runPipeline(
   const start = Date.now();
   let result: OperationResult;
 
-  const rateLimitResult = checkRateLimit(context.role);
-  if (!rateLimitResult.allowed) {
-    const entry = {
-      timestamp: new Date().toISOString(),
-      sessionId: context.sessionId,
-      role: context.role,
-      operation: context.operation,
-      database: context.database,
-      collection: context.collection,
-      filter: context.filter,
-      durationMs: 0,
-      resultCount: null,
-      blocked: true,
-      blockReason: rateLimitResult.reason ?? null,
-      error: null,
-    };
-    await writeAuditEntry(entry);
-    recordMetric(context.operation, context.role, 0, true, false);
-    return { success: false, blocked: true, blockReason: rateLimitResult.reason };
-  }
-
   const rbacResult = checkPermission(context);
   if (!rbacResult.allowed) {
     const entry = {
       timestamp: new Date().toISOString(),
       sessionId: context.sessionId,
-      role: context.role,
+      dbMode: context.dbMode,
       operation: context.operation,
       database: context.database,
       collection: context.collection,
@@ -52,7 +29,7 @@ export async function runPipeline(
       error: null,
     };
     await writeAuditEntry(entry);
-    recordMetric(context.operation, context.role, 0, true, false);
+    recordMetric(context.operation, context.dbMode, 0, true, false);
     return { success: false, blocked: true, blockReason: rbacResult.reason };
   }
 
@@ -61,7 +38,7 @@ export async function runPipeline(
     const entry = {
       timestamp: new Date().toISOString(),
       sessionId: context.sessionId,
-      role: context.role,
+      dbMode: context.dbMode,
       operation: context.operation,
       database: context.database,
       collection: context.collection,
@@ -73,33 +50,8 @@ export async function runPipeline(
       error: null,
     };
     await writeAuditEntry(entry);
-    recordMetric(context.operation, context.role, 0, true, false);
+    recordMetric(context.operation, context.dbMode, 0, true, false);
     return { success: false, blocked: true, blockReason: firewallResult.reason };
-  }
-
-  const schemaResult = await validateQueryFields(context);
-  if (!schemaResult.valid) {
-    const entry = {
-      timestamp: new Date().toISOString(),
-      sessionId: context.sessionId,
-      role: context.role,
-      operation: context.operation,
-      database: context.database,
-      collection: context.collection,
-      filter: context.filter,
-      durationMs: 0,
-      resultCount: null,
-      blocked: true,
-      blockReason: `Unknown fields: ${schemaResult.unknownFields.join(", ")}`,
-      error: null,
-    };
-    await writeAuditEntry(entry);
-    recordMetric(context.operation, context.role, 0, true, false);
-    return {
-      success: false,
-      blocked: true,
-      blockReason: `Unknown fields in query: ${schemaResult.unknownFields.join(", ")}`,
-    };
   }
 
   try {
@@ -109,7 +61,7 @@ export async function runPipeline(
     await writeAuditEntry({
       timestamp: new Date().toISOString(),
       sessionId: context.sessionId,
-      role: context.role,
+      dbMode: context.dbMode,
       operation: context.operation,
       database: context.database,
       collection: context.collection,
@@ -121,7 +73,7 @@ export async function runPipeline(
       error: null,
     });
 
-    recordMetric(context.operation, context.role, durationMs, false, false);
+    recordMetric(context.operation, context.dbMode, durationMs, false, false);
     return result;
   } catch (err) {
     const durationMs = Date.now() - start;
@@ -132,7 +84,7 @@ export async function runPipeline(
     await writeAuditEntry({
       timestamp: new Date().toISOString(),
       sessionId: context.sessionId,
-      role: context.role,
+      dbMode: context.dbMode,
       operation: context.operation,
       database: context.database,
       collection: context.collection,
@@ -144,7 +96,7 @@ export async function runPipeline(
       error: errorMessage,
     });
 
-    recordMetric(context.operation, context.role, durationMs, false, true);
+    recordMetric(context.operation, context.dbMode, durationMs, false, true);
     return { success: false, error: errorMessage };
   }
 }

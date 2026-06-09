@@ -1,0 +1,16 @@
+services:
+  mongodb-staging:
+    image: mongo:latest
+    container_name: mongodb-staging
+    ports:
+      - "27017:27017"
+    environment:
+      - MONGO_INITDB_DATABASE=staging_db
+
+  mongodb-production:
+    image: mongo:latest
+    container_name: mongodb-production
+    ports:
+      - "27018:27017"
+    environment:
+      - MONGO_INITDB_DATABASE=production_db

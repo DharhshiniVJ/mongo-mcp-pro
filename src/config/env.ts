@@ -1,32 +1,37 @@
 import { z } from "zod";
-import { config } from "dotenv";
-import type { AppConfig } from "../types/index.js";
-
+import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
+import { parse } from "yaml";
+import type { AppConfig } from "../types/index.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-config({ path: join(__dirname, "../../.env"), quiet: true });
-
+const yamlPath = join(__dirname, "../../environments.yaml");
+const yamlContent = readFileSync(yamlPath, "utf8");
+const parsedYaml = parse(yamlContent);
 
 const envSchema = z.object({
-  MONGO_URI: z.string().url(),
-  DB_NAME: z.string().min(1),
-  ROLE: z.enum(["reader", "writer", "admin"]).default("reader"),
-  SESSION_ID: z.string().min(1).default("dev-session"),
-  LOG_LEVEL: z.enum(["info", "debug", "error"]).default("info"),
-  AUDIT_LOG_PATH: z.string().min(1).default("logs/audit.jsonl"),
+  mongoUri: z.string().url(),
+  dbName: z.string().min(1),
+  dbMode: z.enum(["restricted", "unrestricted"]).default("restricted"),
 });
 
-const parsed = envSchema.parse(process.env);
+const configSchema = z.object({
+  default: z.string().min(1),
+  environments: z.record(z.string(), envSchema),
+  sessionId: z.string().min(1).default("dev-session"),
+  logLevel: z.enum(["info", "debug", "error"]).default("info"),
+  auditLogPath: z.string().min(1).default("logs/audit.jsonl"),
+});
+
+const validated = configSchema.parse(parsedYaml);
 
 export const appConfig: AppConfig = {
-  mongoUri: parsed.MONGO_URI,
-  dbName: parsed.DB_NAME,
-  role: parsed.ROLE,
-  sessionId: parsed.SESSION_ID,
-  logLevel: parsed.LOG_LEVEL,
-  auditLogPath: parsed.AUDIT_LOG_PATH,
+  default: validated.default,
+  environments: validated.environments,
+  sessionId: validated.sessionId,
+  logLevel: validated.logLevel,
+  auditLogPath: validated.auditLogPath,
 };

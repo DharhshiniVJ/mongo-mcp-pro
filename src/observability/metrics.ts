@@ -1,4 +1,4 @@
-import type { Role } from "../types/index.js";
+import type { DbMode } from "../types/index.js";
 
 const operationCounts = new Map<string, number>();
 const blockedCounts = new Map<string, number>();
@@ -6,12 +6,12 @@ const errorCounts = new Map<string, number>();
 const latencyBuckets = new Map<string, number[]>();
 export function recordMetric(
   operation: string,
-  role: Role,
+  dbMode: DbMode,
   durationMs: number,
   blocked: boolean,
   error: boolean
 ): void {
-  const key = `${role}:${operation}`;
+  const key = `${dbMode}:${operation}`;
 
   if (blocked) {
     blockedCounts.set(key, (blockedCounts.get(key) ?? 0) + 1);

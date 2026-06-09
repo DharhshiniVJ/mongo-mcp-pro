@@ -1,0 +1,13 @@
+default: staging
+environments:
+  staging:
+    mongoUri: "mongodb://localhost:27017"
+    dbName: "staging_db"
+    dbMode: "restricted"
+  production:
+    mongoUri: "mongodb://localhost:27018"
+    dbName: "production_db"
+    dbMode: "unrestricted"
+sessionId: dev-session
+logLevel: debug
+auditLogPath: logs/audit.jsonl

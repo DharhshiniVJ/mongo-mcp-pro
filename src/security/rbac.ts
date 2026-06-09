@@ -1,4 +1,4 @@
-import { isOperationAllowed } from "../config/roles.js";
+import { isOperationAllowed } from "../config/dbModes.js";
 import { logger } from "../observability/logger.js";
 import type { QueryContext } from "../types/index.js";
 
@@ -7,22 +7,22 @@ export interface RbacResult {
   reason?: string;
 }
 export function checkPermission(context: QueryContext): RbacResult {
-  const allowed = isOperationAllowed(context.role, context.operation);
+  const allowed = isOperationAllowed(context.dbMode, context.operation);
 
   if (!allowed) {
     logger.debug("RBAC denied", {
-      role: context.role,
+      dbMode: context.dbMode,
       operation: context.operation,
     });
 
     return {
       allowed: false,
-      reason: `Role '${context.role}' is not permitted to perform '${context.operation}'`,
+      reason: `DB Mode '${context.dbMode}' is not permitted to perform '${context.operation}'`,
     };
   }
 
   logger.debug("RBAC allowed", {
-    role: context.role,
+    dbMode: context.dbMode,
     operation: context.operation,
   });
 

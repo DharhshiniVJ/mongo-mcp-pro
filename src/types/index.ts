@@ -1,10 +1,15 @@
-export type Role = "reader" | "writer" | "admin";
+export type DbMode = "restricted" | "unrestricted";
 export type LogLevel = "debug" | "info" | "error";
 
-export interface AppConfig {
+export interface EnvConfig {
     mongoUri: string;
     dbName: string;
-    role: Role;
+    dbMode: DbMode;
+}
+
+export interface AppConfig {
+    default: string;
+    environments: Record<string, EnvConfig>;
     sessionId: string;
     logLevel: LogLevel;
     auditLogPath: string;
@@ -14,8 +19,9 @@ export interface QueryContext {
     operation: string;
     database: string;
     collection: string;
-    role: Role;
+    dbMode: DbMode;
     sessionId: string;
+    environment?: string;
     filter?: Record<string, unknown>;
     update?: Record<string, unknown>;
     document?: Record<string, unknown>;
@@ -26,10 +32,11 @@ export interface QueryContext {
 export interface AuditEntry{
     timestamp: string;
     sessionId: string;
-    role: Role;
+    dbMode: DbMode;
     operation: string;
     database: string;
     collection: string;
+    environment?: string;
     filter?: Record<string, unknown>;
     durationMs: number;
     resultCount?: number | null;
@@ -47,21 +54,5 @@ export interface OperationResult {
   blockReason?: string;
   error?: string;
 }
-export interface SchemaField {
-  types: string[];
-  nullable: boolean;
-  frequency: number;
-}
-export interface CollectionSchema {
-  collection: string;
-  database: string;
-  fields: Record<string, SchemaField>;
-  sampleSize: number;
-  inferredAt: string;
-}
-export interface RateLimitState {
-  count: number;
-  windowStart: number;
-  lastOperation: number;
-}
+
 

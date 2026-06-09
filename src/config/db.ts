@@ -1,21 +1,36 @@
 import { MongoClient, Db } from "mongodb";
 import { appConfig } from "./env.js";
 
-let client: MongoClient | null = null;
-let db: Db | null = null;
-export async function getDb(): Promise<Db> {
-  if (db) return db;
+const clients = new Map<string, MongoClient>();
+const dbs = new Map<string, Db>();
 
-  client = new MongoClient(appConfig.mongoUri);
+export async function getDbForEnv(envName: string): Promise<Db> {
+  const existingDb = dbs.get(envName);
+  if (existingDb) return existingDb;
+
+  const envConfig = appConfig.environments[envName];
+  if (!envConfig) {
+    throw new Error(`Environment '${envName}' is not defined in environments.yaml`);
+  }
+
+  const client = new MongoClient(envConfig.mongoUri);
   await client.connect();
-  db = client.db(appConfig.dbName);
+  clients.set(envName, client);
+
+  const db = client.db(envConfig.dbName);
+  dbs.set(envName, db);
 
   return db;
 }
+
+export async function getDb(): Promise<Db> {
+  return getDbForEnv(appConfig.default);
+}
+
 export async function closeDb(): Promise<void> {
-  if (client) {
+  for (const client of clients.values()) {
     await client.close();
-    client = null;
-    db = null;
   }
+  clients.clear();
+  dbs.clear();
 }
